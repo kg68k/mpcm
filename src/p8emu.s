@@ -293,22 +293,41 @@ p8emu_start:	pea.l		title_mes(pc)
 		movea.l		a0,a6			* a0/a6=メモリ管理ポインタ
 		bsr		option_check
 
-keep_check:	movea.l		(a6),a6
-		cmpa.l		#$10000,a6
-		bcs		not_keeped		* 常駐してない
+		clr.l		-(sp)
+		DOS		_SUPER
+		move.l		d0,(sp)
+		move.l		a6,d0
+@@:		movea.l		d0,a6			* 先頭のメモリブロックの直後に移動する
+		move.l		(a6),d0
+		bne		@b
+
+keep_check:	cmpi.b		#$ff,4(a6)
+		bne		@f			* 常駐プロセスではない
 		lea.l		$100(a6),a5
+		move.l		8(a6),d1
+		sub.l		a5,d1
+		subq.l		#8,d1
+		bcs		@f			* メモリブロックが小さすぎる
 		move.l		(a5),d1
 		cmp.l		header,d1
-		bne		keep_check		* ヘッダが一致しない
+		bne		@f			* ヘッダが一致しない
 		move.l		4(a5),d1
 		cmp.l		header+4,d1
-		bne		keep_check		* ヘッダが一致しない
+		bne		@f			* ヘッダが一致しない
+
+		DOS		_SUPER
+		addq.l		#4,sp
 		bra		keeped			* 常駐していた
 
+@@:		move.l		12(a6),d0		* 次のメモリブロックへ
+		movea.l		d0,a6
+		bne		keep_check
 
 *		<< 常駐していなかった場合 >>
 
-not_keeped:	btst.b		#0,option_flag(pc)	* -r check
+not_keeped:	DOS		_SUPER
+		addq.l		#4,sp
+		btst.b		#0,option_flag(pc)	* -r check
 		bne		error0			* 常駐してないのに常駐解除は出来ない
 
 		clr.b		emumode			* CHエミュレーション=0 (default)
@@ -469,13 +488,15 @@ error:		DOS		_PRINT
 		moveq.l		#-1,d0
 		DOS		_EXIT2
 
+		.align		4
+
 *===============================================================
 * 		非常駐部分固定データ
 *===============================================================
 		.data
 
-title_mes:	.dc.b		'PCM8 emulator version 0.20 for MPCM '
-		.dc.b		'copyright (c) 1994,95,96 by wachoman',CR,LF,0
+title_mes:	.dc.b		'PCM8 emulator version 0.20A for MPCM '
+		.dc.b		'copyright (c) 1994,98 by wachoman',CR,LF,0
 
 keep_mes:	.dc.b		'常駐しました',CR,LF,0
 free_mes:	.dc.b		'常駐解除しました',CR,LF,0
@@ -495,12 +516,16 @@ usage_mes:	.dc.b		'usage  :  p8emu.x [option]',CR,LF
 
 p8emu_lock_name:.dc.b		'PCM8 emulator P8emu.x ver 0.20',0
 
+		.align		4
+
 *===============================================================
 * 		非常駐部分ワークエリア
 *===============================================================
 		.bss
 
 option_flag:	.ds.b		1			* bit 0 : -r option
+
+		.align		4
 
 		.end		p8emu_start
 

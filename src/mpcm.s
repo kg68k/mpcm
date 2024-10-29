@@ -2759,13 +2759,13 @@ mpcm_end:	tst.b		mpcm_debug-mpw(a6)
 *		ＡＤＰＣＭ処理ルーチン
 *===============================================================
 
-		.include	ADP_high.has
-		.include	ADP_low.has
-		.include	ADP_0101.has
-		.include	ADP_0203.has
-		.include	ADP_0102.has
-		.include	ADP_0103.has
-		.include	ADP_0104.has
+		.include	adp_high.s
+		.include	adp_low.s
+		.include	adp_0101.s
+		.include	adp_0203.s
+		.include	adp_0102.s
+		.include	adp_0103.s
+		.include	adp_0104.s
 
 AtoP_LOOP:	move.l		a2,CH_LOOP_X(a5)	* ループ先頭でのX
 		move.w		d1,CH_LOOP_Y(a5)	* ループ先頭での基本PCM
@@ -2801,13 +2801,13 @@ AtoP_END:	addq.l		#4,sp			* 戻りアドレス破棄
 *		１６ｂｉｔＰＣＭ処理ルーチン
 *===============================================================
 
-		.include	P16_high.has
-		.include	P16_low.has
-		.include	P16_0101.has
-		.include	P16_0203.has
-		.include	P16_0102.has
-		.include	P16_0103.has
-		.include	P16_0104.has
+		.include	p16_high.s
+		.include	p16_low.s
+		.include	p16_0101.s
+		.include	p16_0203.s
+		.include	p16_0102.s
+		.include	p16_0103.s
+		.include	p16_0104.s
 
 
 PCM16_LPEND:	tst.l		CH_LPTIME(a5)
@@ -2837,13 +2837,13 @@ PCM16_END:	addq.l		#4,sp			* 戻りアドレス破棄
 *		８ｂｉｔＰＣＭ処理ルーチン
 *===============================================================
 
-		.include	P8_high.has
-		.include	P8_low.has
-		.include	P8_0101.has
-		.include	P8_0203.has
-		.include	P8_0102.has
-		.include	P8_0103.has
-		.include	P8_0104.has
+		.include	p8_high.s
+		.include	p8_low.s
+		.include	p8_0101.s
+		.include	p8_0203.s
+		.include	p8_0102.s
+		.include	p8_0103.s
+		.include	p8_0104.s
 
 PCM8_LPEND:	tst.l		CH_LPTIME(a5)
 		beq		1f			* 無限ループだった場合
@@ -2901,9 +2901,9 @@ make_keyoff_PCM:
 *		IOCS専用ADPCM処理ルーチン
 *===============================================================
 
-		.include	ADP_EFFECT.has
-		.include	P16_EFFECT.has
-		.include	P8_EFFECT.has
+		.include	adp_effect.s
+		.include	p16_effect.s
+		.include	p8_effect.s
 
 
 *===============================================================
@@ -3753,6 +3753,8 @@ recover_iocs:	lea.l		iocs_vecs-header(a5),a2
 		movea.l		(a2)+,a1
 		IOCS		_B_INTVCS		* IOCS _ADPCMMODを戻す
 		rts
+
+		.align		4
 
 
 *===============================================================
