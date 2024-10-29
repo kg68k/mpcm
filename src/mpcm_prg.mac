@@ -1,0 +1,102 @@
+
+div32_16	macro					* d1.l = d1.l / d0.w のマクロ
+							* breaks d1.l - d3.l
+		move.w		d1,d2			* thanks to k.yoshida
+		clr.w		d1
+		swap.w		d1
+		divu.w		d0,d1
+		move.w		d1,d3
+		move.w		d2,d1
+		divu.w		d0,d1
+		swap.w		d3
+		move.w		d1,d3
+		move.l		d3,d1
+
+		endm
+
+VOLUME		macro		_vol,_dst,_wk		* 音量変換のマクロ
+
+	.if	_vol=0
+		asr.w		#3,_dst			* 1/8 倍
+	.endif
+	.if	_vol=1
+		asr.w		#2,_dst
+		move.w		_dst,_wk
+		asr.w		#2,_wk
+		sub.w		_wk,_dst		* 3/16 倍
+	.endif
+	.if	_vol=2
+		asr.w		#2,_dst			* 1/4　倍
+	.endif
+	.if	_vol=3
+		asr.w		#2,_dst
+		move.w		_dst,_wk
+		asr.w		#2,_wk
+		add.w		_wk,_dst		* 5/16　倍
+	.endif
+	.if	_vol=4
+		asr.w		#1,_dst
+		move.w		_dst,_wk
+		asr.w		#2,_wk
+		sub.w		_wk,_dst		* 3/8　倍
+	.endif
+	.if	_vol=5
+		asr.w		#1,_dst			* 1/2　倍
+	.endif
+	.if	_vol=6
+		asr.w		#1,_dst
+		move.w		_dst,_wk
+		asr.w		#2,_wk
+		add.w		_wk,_dst		* 5/8　倍
+	.endif
+	.if	_vol=7
+		move.w		_dst,_wk
+		asr.w		#2,_wk
+		sub.w		_wk,_dst		* 3/4　倍
+	.endif
+*	.if	_vol=8
+*		無し
+*	.endif
+	.if	_vol=9
+		move.w		_dst,_wk
+		asr.w		#2,_wk
+		add.w		_wk,_dst		* 5/4　倍
+	.endif
+	.if	_vol=10
+		move.w		_dst,_wk
+		asr.w		#1,_wk
+		add.w		_wk,_dst		* 3/2　倍
+	.endif
+	.if	_vol=11
+		add.w		_dst,_dst		* 2/1　倍
+	.endif
+	.if	_vol=12
+		move.w		_dst,_wk
+		asr.w		#1,_wk
+		add.w		_dst,_dst
+		add.w		_wk,_dst		* 5/2　倍
+	.endif
+	.if	_vol=13
+		move.w		_dst,_wk
+		add.w		_dst,_dst
+		add.w		_wk,_dst		* 3/1　倍
+	.endif
+	.if	_vol=14
+		add.w		_dst,_dst
+		add.w		_dst,_dst		* 4/1　倍
+	.endif
+	.if	_vol=15
+		move.w		_dst,_wk
+		add.w		_dst,_dst
+		add.w		_dst,_dst
+		add.w		_wk,_dst		* 5/1　倍
+	.endif
+	.if	_vol='n'
+		muls.w		d5,_dst
+		asr.l		#7,_dst			* n/128　倍
+	.endif
+	.if	_vol='x'
+		moveq.l		#0,_dst			* 0倍
+	.endif
+
+		endm
