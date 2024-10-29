@@ -22,6 +22,12 @@ CR		equ		$0d
 LF		equ		$0a
 EOF		equ		$1a
 
+.ifdef __CRLF__
+CRLF:		.reg		CR,LF
+.else
+CRLF:		.reg		LF
+.endif
+
 DMA0		equ		$00e84000	* DMAチャンネル#0
 DMA1		equ		$00e84040	* DMAチャンネル#1
 DMA2		equ		$00e84080	* DMAチャンネル#2
@@ -190,7 +196,7 @@ fc_logadr:		.dc.l		TEXT_RAM+$40000	* 関数呼びだしログバッファ
 
 mplock_app_name:.ds.b		32*32		* mpcmをロックしているアプリ名称バッファ
 
-		.even
+		.align		16
 
 PCM_out:	.ds.b		MIX_SIZE*4	* PCM 合成用バッファ
 ADPCM_out0:	.ds.b		MIX_SIZE	* ADPCM 作成/出力用バッファ0
@@ -2677,6 +2683,17 @@ mpcm_overload:	lea.l		DMA3,a0			* 演奏終了処理
 
 		ENDM
 
+cpush_buf:
+		.cpu		68040
+		lea		(-16,a0),a4
+		cpushl		dc,(a4)
+		lea		(-32,a0),a4
+		cpushl		dc,(a4)
+		lea		(-48,a0),a4
+		cpushl		dc,(a4)
+		.cpu		68000
+cpush_buf_end:
+
 		move.l		a2,PtoA_X-mpw(a6)	* 次の変換に備えて保存
 		move.w		d1,PtoA_Y-mpw(a6)
 
@@ -3132,6 +3149,7 @@ not_keeped:	btst.b		#0,option_flag(pc)	* -r check
 		bsr		make_PtoA_tbl		* PCM -> ADPCM 変換テーブル作成
 		bsr		init_mpcm		* 割り込みワーク/ADPCM/DMA初期化
 		bsr		init_iocs		* iocsコールの処理横取り初期化
+		bsr		disable_cpushl
 
 		pea.l		keep_mes(pc)
 		DOS		_PRINT
@@ -3147,6 +3165,22 @@ not_keeped:	btst.b		#0,option_flag(pc)	* -r check
 		suba.l		a1,a0
 		move.l		a0,-(sp)
 		DOS		_KEEPPR			* 常駐して終了
+
+
+disable_cpushl:
+		lea	($cbc),a1
+		IOCS	_B_BPEEK
+		cmpi.b	#4,d0
+		bcc	@f
+
+* 68040 未満なら cpushl を bra で飛び越えるように書き換える.
+		move	#$6000+cpush_buf_end-(cpush_buf+2),(cpush_buf)
+		subq.b	#2,d0
+		bcs	@f
+		moveq	#3,d1
+		IOCS	_SYS_STAT
+@@:		rts
+
 
 *		<< 既に常駐していた場合 >>
 
@@ -3754,55 +3788,53 @@ recover_iocs:	lea.l		iocs_vecs-header(a5),a2
 		IOCS		_B_INTVCS		* IOCS _ADPCMMODを戻す
 		rts
 
-		.align		4
-
 
 *===============================================================
 * 		非常駐部分固定データ
 *===============================================================
 		.data
 
-title_mes:	.dc.b		'Modulatable (ad)PCM driver MPCM.x version. 0.45A '
+title_mes:	.dc.b		'Modulatable (ad)PCM driver MPCM.x version. 0.45A+1 '
 		.dc.b		'copyright (c) 1994,98 by wachoman'
-crlf_mes:	.dc.b		CR,LF,0
+crlf_mes:	.dc.b		CRLF,0
 
-keep_mes:	.dc.b		'常駐しました.',CR,LF,0
-free_mes:	.dc.b		'常駐解除しました.',CR,LF,0
+keep_mes:	.dc.b		'常駐しました.',CRLF,0
+free_mes:	.dc.b		'常駐解除しました.',CRLF,0
 
-error0_mes:	.dc.b		'常駐していません.',CR,LF,0
-error1_mes:	.dc.b		'既に常駐しています.',CR,LF,0
-error2_mes:	.dc.b		'占有されているため常駐解除できません.',CR,LF,0
-error3_mes:	.dc.b		'TRAP#1が既に使用されています. 常駐できません.',CR,LF,0
+error0_mes:	.dc.b		'常駐していません.',CRLF,0
+error1_mes:	.dc.b		'既に常駐しています.',CRLF,0
+error2_mes:	.dc.b		'占有されているため常駐解除できません.',CRLF,0
+error3_mes:	.dc.b		'TRAP#1が既に使用されています. 常駐できません.',CRLF,0
 
-usage_mes:	.dc.b		'usage  :  mpcm.x [option]',CR,LF
-		.dc.b		'option :  /r      ･････････ 常駐解除',CR,LF
-		.dc.b		'          /d[0/1] ･････････ デバッグモード変更',CR,LF
-		.dc.b		'          /v      ･････････ 音量16段階固定          (常駐時のみ有効)',CR,LF
-		.dc.b		'          /fh     ･････････ ADPCM動作周波数 31.2kHz (常駐時のみ有効)',CR,LF
-		.dc.b		'          /fl     ･････････ ADPCM動作周波数  7.8kHz (常駐時のみ有効)',CR,LF
-		.dc.b		'          /s      ･････････ mpcm状態表示',CR,LF
+usage_mes:	.dc.b		'usage  :  mpcm.x [option]',CRLF
+		.dc.b		'option :  /r      ･････････ 常駐解除',CRLF
+		.dc.b		'          /d[0/1] ･････････ デバッグモード変更',CRLF
+		.dc.b		'          /v      ･････････ 音量16段階固定          (常駐時のみ有効)',CRLF
+		.dc.b		'          /fh     ･････････ ADPCM動作周波数 31.2kHz (常駐時のみ有効)',CRLF
+		.dc.b		'          /fl     ･････････ ADPCM動作周波数  7.8kHz (常駐時のみ有効)',CRLF
+		.dc.b		'          /s      ･････････ mpcm状態表示',CRLF
 		.dc.b		0
 
 change_debugmode_mes:
-		.dc.b		'デバッグモードを変更しました.',CR,LF,0
+		.dc.b		'デバッグモードを変更しました.',CRLF,0
 no_lock_entry_mes:
-		.dc.b		'MPCMは占有されていません.',CR,LF,0
+		.dc.b		'MPCMは占有されていません.',CRLF,0
 lock_entry_mes:
-		.dc.b		'-- MPCMを占有しているアプリケーション一覧 --',CR,LF,0
+		.dc.b		'-- MPCMを占有しているアプリケーション一覧 --',CRLF,0
 
 debug_mode_mes:	.dc.b		'デバッグモード :',0
 adpcm_mode_mes:	.dc.b		'ADPCM動作周波数:',0
 pitch_mode_mes:	.dc.b		'音程変換       :',0
 volume_mode_mes:.dc.b		'音量変換       :',0
-on_mes:		.dc.b		'on',CR,LF,0
-off_mes:	.dc.b		'off',CR,LF,0
-adpcm7k_mes:	.dc.b		'7.8kHz',CR,LF,0
-adpcm15k_mes:	.dc.b		'15.6kHz',CR,LF,0
-adpcm31k_mes:	.dc.b		'31.2kHz',CR,LF,0
-v16_mes:	.dc.b		'16段階',CR,LF,0
-v128_mes:	.dc.b		'128段階',CR,LF,0
-p_lock_mes:	.dc.b		'原音固定',CR,LF,0
-p_unlock_mes:	.dc.b		'変換可能',CR,LF,0
+on_mes:		.dc.b		'on',CRLF,0
+off_mes:	.dc.b		'off',CRLF,0
+adpcm7k_mes:	.dc.b		'7.8kHz',CRLF,0
+adpcm15k_mes:	.dc.b		'15.6kHz',CRLF,0
+adpcm31k_mes:	.dc.b		'31.2kHz',CRLF,0
+v16_mes:	.dc.b		'16段階',CRLF,0
+v128_mes:	.dc.b		'128段階',CRLF,0
+p_lock_mes:	.dc.b		'原音固定',CRLF,0
+p_unlock_mes:	.dc.b		'変換可能',CRLF,0
 
 
 		.even
