@@ -190,7 +190,7 @@ fc_logadr:		.dc.l		TEXT_RAM+$40000	* 関数呼びだしログバッファ
 
 mplock_app_name:.ds.b		32*32		* mpcmをロックしているアプリ名称バッファ
 
-		.even
+		.align		16
 
 PCM_out:	.ds.b		MIX_SIZE*4	* PCM 合成用バッファ
 ADPCM_out0:	.ds.b		MIX_SIZE	* ADPCM 作成/出力用バッファ0
@@ -202,6 +202,12 @@ dummy_ADPCM:	.dc.b		$88,$88,$88,$88,$88,$88,$88,$88	* ダミー再生ADPCM
 		.dc.b		$80,$80,$80,$80,$80,$80,$80,$80
 		.dc.b		$80,$80,$80,$80,$80,$80,$80,$80
 		.dc.b		$80,$80,$80,$80,$80,$80,$80,$80
+
+PCM_out_ptr:	.dc.l	0
+ADPCM_out0_ptr:	.dc.l	0
+ADPCM_out1_ptr:	.dc.l	0
+dummy_ADPCM_ptr:.dc.l	0
+adpcm_buffer:	.dc.l	0
 
 		.align		4
 mpw:							* システムワークポインタアドレス
@@ -603,7 +609,7 @@ func_00xx_DMA_start:
 
 		moveq.l		#MIX_SIZE,d1
 		moveq.l		#5,d2
-		lea.l		dummy_ADPCM-mpw(a6),a1
+		movea.l		dummy_ADPCM_ptr-mpw(a6),a1
 
 		move.l		#ADPCM+3,DAR(a0)	* ADPCM データレジスタ
 		move.b		d2,DFC(a0)		* move.b #$05,DFC(a0)
@@ -1601,7 +1607,7 @@ func_8002:	move.w		sr,d6
 		move.b		#$05,MFC(a0)
 		move.b		#$05,DFC(a0)
 
-		move.l		#dummy_ADPCM,MAR(a0)	* $88を通常出力
+		move.l		dummy_ADPCM_ptr(pc),MAR(a0)	* $88を通常出力
 		move.l		#ADPCM+3,DAR(a0)	* ADPCM データレジスタ
 		move.w		#8,MTC(a0)		* 8バイトだけ
 		move.b		CSR(a0),CSR(a0)		* CSR all clear
@@ -2285,10 +2291,12 @@ ADPCM_mode:	movem.l		d0-d2,-(sp)
 		move.b		d0,$09da.w
 @@:		tst.b		$E90003
 		bmi.s		@b
+		tas.b		$E9A001
+		nop					* high clock 対応
 		move.b		#$1b,$E90001
-		nop
-		nop
-		nop
+@@:		tst.b		$E90003
+		bmi.s		@b
+		tas.b		$E9A001
 		nop					* high clock 対応
 		move.b		d0,$E90003
 
@@ -2516,7 +2524,8 @@ mpcm:		ori.w		#$0700,sr		* 割り込み禁止
 
 *		16bit PCM 合成バッファ初期化
 mpcm_loop:
-@@:		lea.l		PCM_out+MIX_SIZE*4-mpw(a6),a1
+@@:		movea.l		PCM_out_ptr-mpw(a6),a1
+		lea.l		ADPCM_out0-PCM_out(a1),a1
 		moveq.l		#0,d0
 		moveq.l		#0,d1
 		moveq.l		#0,d2
@@ -2541,7 +2550,7 @@ mpcm_loop:
 		REPT		CH_MAX
 		tst.b		CH_PLAY_FLAG(a5)
 		beq		@f
-		lea.l		PCM_out-mpw(a6),a1	* PCM 作成バッファ
+		movea.l		PCM_out_ptr-mpw(a6),a1	* PCM 作成バッファ
 		move.l		a6,-(sp)		* a6.l保存
 		movea.l		CH_JMP_ADR(a5),a0
 		jsr		(a0)
@@ -2555,7 +2564,7 @@ mpcm_loop:
 		REPT		EFCT_MAX
 		tst.b		EFCT_PLAY_FLAG(a5)
 		beq		@f
-		lea.l		PCM_out-mpw(a6),a1	* PCM 作成バッファ
+		movea.l		PCM_out_ptr-mpw(a6),a1	* PCM 作成バッファ
 		movea.l		EFCT_JMP_ADR(a5),a0
 		jsr		(a0)
 		move.l		EFCT_CH_MASK(a5),d0
@@ -2566,7 +2575,7 @@ mpcm_loop:
 *		IOCSチャンネルPCM合成
 		tst.b		EFCT_PLAY_FLAG(a5)	* IOCS再生中？
 		beq		@f
-		lea.l		PCM_out-mpw(a6),a1	* PCM 作成バッファ
+		movea.l		PCM_out_ptr-mpw(a6),a1	* PCM 作成バッファ
 		movea.l		EFCT_JMP_ADR(a5),a0
 		jsr		(a0)
 		move.l		EFCT_CH_MASK(a5),d0
@@ -2582,7 +2591,7 @@ mpcm_overload:	lea.l		DMA3,a0			* 演奏終了処理
 
 		move.w		#8,MTC(a0)		* DMAが止まっている時
 		move.b		#$05,MFC(a0)
-		move.l		#dummy_ADPCM,MAR(a0)	* $88を通常出力
+		move.l		dummy_ADPCM_ptr(pc),MAR(a0)	* $88を通常出力
 		move.b		CSR(a0),CSR(a0)		* CSR all clear
 		move.b		#$80,DCCR(a0)		* DMA START/割り込み無し
 		bra		mpcm_end
@@ -2590,7 +2599,7 @@ mpcm_overload:	lea.l		DMA3,a0			* 演奏終了処理
 1:
 		move.w		#8,BTC(a0)
 		move.b		#$05,BFC(a0)
-		move.l		#dummy_ADPCM,BAR(a0)	* $88を継続で出力
+		move.l		dummy_ADPCM_ptr(pc),BAR(a0)	* $88を継続で出力
 		move.b		CSR(a0),CSR(a0)
 		move.b		#$40,DCCR(a0)		* 継続動作/転送終了割込無し
 		bra		mpcm_end
@@ -2605,11 +2614,11 @@ mpcm_overload:	lea.l		DMA3,a0			* 演奏終了処理
 
 @@:		neg.w		ADPCM_out_flag-mpw(a6)
 		bmi		1f
-		lea.l		ADPCM_out0-mpw(a6),a0
+		movea.l		ADPCM_out0_ptr-mpw(a6),a0
 		bra		@f
-1:		lea.l		ADPCM_out1-mpw(a6),a0	* a0.l = 今回作成するADPCMバッファ
+1:		movea.l		ADPCM_out1_ptr-mpw(a6),a0	* a0.l = 今回作成するADPCMバッファ
 
-@@:		lea.l		PCM_out-mpw(a6),a1	* a1.l = 16bit PCM 合成バッファ
+@@:		movea.l		PCM_out_ptr-mpw(a6),a1	* a1.l = 16bit PCM 合成バッファ
 		movea.l		PtoA_X-mpw(a6),a2	* a2.l = PCM -> ADPCM テーブルアドレス
 		move.w		PtoA_Y-mpw(a6),d1	* d1.w = PCM -> ADPCM 予測値
 		moveq.l		#0,d2			* d2.w = 上位8bit CLR
@@ -2685,9 +2694,8 @@ mpcm_overload:	lea.l		DMA3,a0			* 演奏終了処理
 
 *		DMA 継続動作準備
 
-		lea.l		-48(a0),a4
-
-		lea.l		DMA3,a0
+patch_1:	lea.l		-48(a0),a4
+patch_2:	lea.l		DMA3,a0
 		move.w		sr,d0
 		ori.w		#$0700,sr
 		btst.b		#3,CSR(a0)		* CSR ACTビット(過負荷時のチェック)
@@ -2717,7 +2725,7 @@ mpcm_overload:	lea.l		DMA3,a0			* 演奏終了処理
 
 		move.w		d1,MTC(a0)		* $88+$80を1回分転送
 		move.b		d2,MFC(a0)
-		move.l		#dummy_ADPCM,MAR(a0)
+		move.l		dummy_ADPCM_ptr,MAR(a0)
 
 		move.w		d1,BTC(a0)		* $88+$80をもう1回分転送
 		move.b		d2,BFC(a0)
@@ -2754,6 +2762,29 @@ mpcm_end:	tst.b		mpcm_debug-mpw(a6)
 		movem.l		(sp)+,d0-d7/a0-a6
 		rte
 
+
+flush_buf:
+		.cpu	68040
+		movec	cacr,d0
+		tst.l	d0
+		bpl	@f
+		lea	-$30(a0),a4
+		cpushl	dc,(a4)
+		lea	-$20(a0),a4
+		cpushl	dc,(a4)
+		lea	-$10(a0),a4
+		cpushl	dc,(a4)
+		.cpu	68000
+@@:		lea	-$30(a0),a4
+bra_w:		bra.w	patch_2
+
+cache_patch:	lea	patch_1(pc),a0
+		lea	flush_buf(pc),a1
+		move	bra_w(pc),(a0)+
+		move.l	a1,d0
+		sub.l	a0,d0
+		move	d0,(a0)
+		rts
 
 *===============================================================
 *		ＡＤＰＣＭ処理ルーチン
@@ -3048,7 +3079,18 @@ PtoA_tbl:	.ds.b		32014			* PCM -> ADPCM 作成テーブル
 
 		.text
 
-mpcm_start:	pea.l		title_mes(pc)
+mpcm_start:
+		lea.l		stack_end,sp
+		move.l		a0,d0
+		move.l		a1,d1
+		addi.l		#$10,d0
+		sub.l		d0,d1
+		move.l		d1,-(sp)
+		move.l		d0,-(sp)
+		DOS		_SETBLOCK
+		addq.l		#8,sp
+
+		pea.l		title_mes(pc)
 		DOS		_PRINT
 		addq.l		#4,sp
 		movea.l		a0,a6			* a0/a6=メモリ管理ポインタ
@@ -3154,7 +3196,7 @@ keeped:		tst.b		option_flag
 		beq		error1
 
 		btst.b		#0,option_flag(pc)	* r オプションが指定されている？
-		beq		@f			* されてない
+		beq		keeped2			* されてない
 
 		tst.b		mpcm_locked-header(a5)	* 常駐解除処理
 		bne		error2			* 占有されている
@@ -3172,14 +3214,24 @@ keeped:		tst.b		option_flag
 
 		move.b		#$01,$E92001		* ADPCM 停止
 
-		move.w		sr,d0			* sr 保存
+		move.w		sr,-(sp)		* sr 保存
 		ori.w		#$0700,sr		* 割り込み禁止
 
 		move.l		trap1_vec_buff-header(a5),$0084.w	* trap 1 ベクタ戻す
 		move.l		DMA_vec_buff-header(a5),$01a8.w		* DMA転送終了割り込み
 		move.l		DMAERR_vec_buff-header(a5),$01ac.w	* DMA転送エラー割り込み
 
-		move.w		d0,sr			* 割り込み許可
+		move.l		adpcm_buffer-header(a5),-(sp)		* バッファ解放
+		beq		@f
+		DOS		_MFREE
+@@:		addq.l		#4,sp
+
+		cmpi.b		#4,$0CBC.w
+		bcs		@f
+		moveq.l		#3,d1
+		IOCS		_SYS_STAT
+@@:
+		move.w		(sp)+,sr		* 割り込み許可
 
 		bsr		recover_iocs		* IOCSコールを元に戻す
 
@@ -3193,7 +3245,7 @@ keeped:		tst.b		option_flag
 		addq.l		#8,sp
 		bra		keeped_end		* 常駐解除終了
 
-@@:		btst.b		#1,option_flag(pc)	* -dオプションあり？
+keeped2:	btst.b		#1,option_flag(pc)	* -dオプションあり？
 		beq		@f
 		tst.b		D_option_work
 		bmi		1f
@@ -3623,28 +3675,15 @@ init_mpcm:	lea.l		mpw,a6
 		DOS		_SUPER
 		move.l		d0,(sp)
 
-		move.w		sr,d0			* sr 保存
+		move.w		sr,-(sp)		* sr 保存
 		ori.w		#$0700,sr		* 割り込み禁止
 
-		move.l		$0084.w,d1		* trap1
-		cmp.l		#$00ff0000,d1
-		bcs		trap1_error		* 何者かがtrap#1を占有している
+		move.w		$0084.w,d1		* trap1
+		cmpi.w		#$21ff,d1
+		bne		trap1_error		* 何者かがtrap#1を占有している
 
 
 		clr.b		ADPCM_SYSWORK.w		* IOCS 初期化
-
-*		ADPCMの初期化
-		move.w		frq_offset-mpw(a6),d0
-		beq		2f
-		cmpi.w		#4*2,d0
-		beq		1f
-		move.w		#$0203,d1		* ADPCM 7.8kHz
-		bra		@f
-1:		move.w		#$0403,d1		* ADPCM 15.6kHz
-		bra		@f
-2:		move.w		#$0603,d1		* ADPCM 31.2kHz
-@@:		jsr		ADPCM_mode		* 周波数15.6kHz/PAN左右
-		move.b		#$02,ADPCM+1		* ADPCM 再生ON
 
 *		DMA 初期化
 @@:		lea.l		DMA3,a0
@@ -3664,7 +3703,7 @@ init_mpcm:	lea.l		mpw,a6
 		move.l		$01ac.w,DMAERR_vec_buff	* DMA転送エラー割り込み
 		move.l		#mpcm_err,$01ac.w
 
-		move.w		d0,sr			* 割り込み許可
+		move.w		(sp)+,sr		* 割り込み許可
 
 		lea.l		mplock_app_name-mpw(a6),a0	* mpcm lock app名初期化
 		moveq.l		#32-1,d0
@@ -3674,12 +3713,77 @@ init_mpcm:	lea.l		mpw,a6
 
 		clr.b		mpcm_locked-mpw(a6)
 
+		lea.l		PCM_out,a1		* ADPCM バッファアドレスを設定
+		move.l		a1,PCM_out_ptr
+		lea.l		ADPCM_out0,a1
+		move.l		a1,ADPCM_out0_ptr
+		lea.l		ADPCM_out1,a1
+		move.l		a1,ADPCM_out1_ptr
+		lea		dummy_ADPCM,a1
+		move.l		a1,dummy_ADPCM_ptr
+		clr.l		adpcm_buffer
+
+		move.b		$0CBC.w,d3
+		beq		init_mpcm_68000		* 68000
+
+		move.l		#$00BC0000,d2		* 68010-68040
+		cmpi.b		#6,d3
+		bcs		@f
+		move.l		#$01000000,d2		* 68060
+@@:		move.l		ADPCM_out0_ptr,d0
+		cmp.l		d2,d0
+		bcc		init_mpcm_not_highmem	* バッファはメインメモリ上にある
+
+		movea.l		d0,a1
+		moveq.l		#0,d1			* MPU 状態の取得
+		IOCS		_SYS_STAT
+		btst.l		#14,d0
+		beq		init_mpcm_no_mmu	* MMU なし
+
+		move.w		#$F000,d1		* 論理アドレス->物理アドレス変換
+		IOCS		_SYS_STAT
+		cmp.l		d2,d0
+		bcs		init_mpcm_no_mmu	* バッファはメインメモリ上にある
+init_mpcm_not_highmem:
+		move.l		#MIX_SIZE*3,-(sp)	* ADPCM バッファを確保
+		move.w		#0,-(sp)
+		DOS		_MALLOC2
+		addq.l		#6,sp
+		move.l		d0,adpcm_buffer
+		bmi		adpcmbuf_error
+
+		move.l		d0,ADPCM_out0_ptr	* バッファアドレスを変更
+		addi.l		#MIX_SIZE,d0
+		move.l		d0,ADPCM_out1_ptr
+		addi.l		#MIX_SIZE,d0
+		move.l		d0,dummy_ADPCM_ptr
+
+		movea.l		d0,a1			* ダミーデータを転送
+		lea.l		dummy_ADPCM,a0
+		moveq.l		#48/4-1,d1
+@@:		move.l	(a0)+,(a1)+
+		dbra	d1,@b
+init_mpcm_no_mmu:
+		cmpi.b		#4,d3
+		bcs		@f			* 68040/68060 なら自己書き換えで
+		jsr		cache_patch		* キャッシュ破棄ルーチンを埋め込む
+@@:
+		moveq.l		#3,d1			* キャッシュ破棄
+		IOCS		_SYS_STAT
+init_mpcm_68000:
+		move.w		#$8002,d0		* MPCM 初期化
+		trap		#1
 		DOS		_SUPER
 		addq.l		#4,sp
 
 		rts
 
-trap1_error:	move.w		d0,sr			* 割り込み許可
+adpcmbuf_error:	DOS		_SUPER
+		addq.l		#4,sp
+		pea.l		memerror_mes(pc)
+		bra		error
+
+trap1_error:	move.w		(sp)+,sr		* 割り込み許可
 		DOS		_SUPER
 		addq.l		#4,sp
 		bra		error3
@@ -3754,7 +3858,7 @@ recover_iocs:	lea.l		iocs_vecs-header(a5),a2
 		IOCS		_B_INTVCS		* IOCS _ADPCMMODを戻す
 		rts
 
-		.align		4
+		.align		16,0
 
 
 *===============================================================
@@ -3762,8 +3866,16 @@ recover_iocs:	lea.l		iocs_vecs-header(a5),a2
 *===============================================================
 		.data
 
-title_mes:	.dc.b		'Modulatable (ad)PCM driver MPCM.x version. 0.45A '
-		.dc.b		'copyright (c) 1994,98 by wachoman'
+memerror_mes:	.dc.b		'メモリ確保失敗',CR,LF,0
+
+title_mes:	.dc.b		'MODULATABLE (AD)PCM DRIVER '
+	.irpc	c,'VERSION 0.45A+2'
+		.dc.b		$f2,'&c'
+	.endm
+		.dc.b		'(CACHE/HI-MEM) Extended version by MZL',CR,LF
+		.dc.b		'Original program is ',$a5,$a5,$a5,CR,LF
+		.dc.b		TAB,'Modulatable (ad)PCM driver MPCM.x version. 0.45A'
+		.dc.b		' copyright (c) 1994,98 by wachoman'
 crlf_mes:	.dc.b		CR,LF,0
 
 keep_mes:	.dc.b		'常駐しました.',CR,LF,0
@@ -3832,6 +3944,7 @@ conv_tbl3:	.dc.l		PtoA_tbl
 *===============================================================
 * 		非常駐部分ワークエリア
 *===============================================================
+		.align		16
 		.bss
 
 option_flag:	.ds.b		1			* bit 0 : -r option
@@ -3845,4 +3958,8 @@ F_option_work:	.ds.w		1			* F option work
 ADPCMBUFF:	.ds.b		64*1024
 
 .endif
+
+		.ds.w		2054
+stack_end:
+
 		.end		mpcm_start
